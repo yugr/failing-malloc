@@ -19,6 +19,7 @@
 #include <assert.h>
 
 static char cmdline[512];
+static int fail_after = 0;
 
 // Layman's /proc/self/cmdline reader...
 static void read_cmdline(char *out, size_t n) {
@@ -65,7 +66,12 @@ static void init() {
   size_t exename_len = strlen(cmdline);
   read_cmdline(cmdline + exename_len, sizeof(cmdline) - exename_len);
 
-  PRINTF_NO_ALLOC(STDERR_FILENO, "failingmalloc: intercepting malloc in '%s'\n", cmdline);
+  const char *fail_after_str = getenv("FAILING_MALLOC_FAIL_AFTER");
+  fail_after = fail_after_str ? atoi(fail_after_str) : 0;
+
+  PRINTF_NO_ALLOC(STDERR_FILENO,
+                  "failingmalloc: intercepting malloc in '%s' (fail after %d allocs)\n",
+                  cmdline, fail_after);
 }
 
 static int return_null_p_impl(const char *where) {
@@ -84,6 +90,12 @@ static int return_null_p_impl(const char *where) {
 
   if (state != ENABLED)
     return 0;
+
+  static int call_count;
+  if (call_count < fail_after) {
+    ++call_count;
+    return 0;
+  }
 
   static int null_reported = 0;
   if (!null_reported) {

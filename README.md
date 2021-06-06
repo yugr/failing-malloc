@@ -10,3 +10,16 @@ BRANCHES IN THIS REPO MAY BE FORCED CHANGED AT ANY MOMENT.
 
 To instrument programs need to either `export LD_PRELOAD=path/to/libfailingmalloc.so`
 or `echo path/to/libfailingmalloc.so >> /etc/ld.so.preload`.
+
+Options are supplied through environment variables:
+* `FAILING_MALLOC_FAIL_AFTER` - do not try to return `NULL`
+  for first `N` calls
+
+To fuzz an app run it in a loop:
+```
+$ while true; do
+  export FAILING_MALLOC_FAIL_AFTER=$((`od -vAn -N1 -tu1 < /dev/urandom` >> 5))
+  LD_PRELOAD=path/to/libfailingmalloc.so myapp
+  sleep 0.5
+done
+```
