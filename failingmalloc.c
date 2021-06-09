@@ -21,6 +21,21 @@
 static char cmdline[512];
 static int fail_after = 0;
 
+// Is file a system library or executable?
+static int is_system_file(const char *name) {
+  // Do not insert errors into system processes
+  if (strncmp(name, "/usr", 4u) == 0
+      || strncmp(name, "/bin", 4u) == 0
+      || strncmp(name, "/sbin", 5u) == 0
+      || strncmp(name, "/lib", 4u) == 0)
+    return 1;
+  // And configure tests
+  const char *basename = strrchr(name, '/');
+  if (strcmp(basename ? basename + 1 : name, "conftest") == 0)
+    return 1;
+  return 0;
+}
+
 // Layman's /proc/self/cmdline reader...
 static void read_cmdline(char *out, size_t n) {
   int fd = open("/proc/self/cmdline", O_RDONLY);
@@ -58,7 +73,7 @@ static void read_cmdline(char *out, size_t n) {
 
 static int is_checker_enabled() {
   int res = readlink("/proc/self/exe", cmdline, sizeof(cmdline));
-  return 0 < res && (unsigned)res < sizeof(cmdline);
+  return 0 < res && (unsigned)res < sizeof(cmdline) && !is_system_file(cmdline);
 }
 
 // Collect info for logging, etc.
@@ -74,21 +89,59 @@ static void init() {
                   cmdline, fail_after);
 }
 
-static int return_null_p_impl(const char *where) {
+struct CallbackData {
+  int res;
+  size_t addr;
+};
+
+static int is_system_code_callback(struct dl_phdr_info *info, size_t size, void *data) {
+  size = size;
+
+  struct CallbackData *cb_data = (struct CallbackData *)data;
+  size_t addr = cb_data->addr;
+
+  int i;
+  for (i = 0; i < info->dlpi_phnum; i++) {
+    size_t start = info->dlpi_addr + info->dlpi_phdr[i].p_vaddr;
+    size_t end = start + info->dlpi_phdr[i].p_memsz;
+    if (0) {
+      PRINTF_NO_ALLOC(STDERR_FILENO, "%s: header %d [%zx, %zx): %zx\n", info->dlpi_name, i, start, end, addr);
+    }
+    if (start <= addr && addr < end) {
+      cb_data->res = is_system_file(info->dlpi_name);
+      return 1;  // Stop processing
+    }
+  }  // i
+
+  return 0;
+}
+
+// Does address belong to system library?
+static int is_system_code(const void *addr) {
+  struct CallbackData cb_data = {0, (size_t)addr};
+  dl_iterate_phdr(is_system_code_callback, &cb_data);
+  return cb_data.res;
+}
+
+static int return_null_p_impl(const char *where, const void *ret_addr) {
   // Init status
   static enum {
     UNKNOWN  = 0,
     DISABLED = 1,
-    ENABLED  = 2
+    NOINIT   = 2,
+    ENABLED  = 3
   } state = UNKNOWN;
 
-  if (state == UNKNOWN) {
-    state = is_checker_enabled() ? ENABLED : DISABLED;
-    if (state == ENABLED)
-      init();
-  }
+  if (state == UNKNOWN)
+    state = is_checker_enabled() ? NOINIT : DISABLED;
 
-  if (state != ENABLED)
+  if (state == DISABLED)
+    return 0;
+
+  // Do not return NULL to system libs as we aren't interested in them
+  // Do this before calling init() to avoid hangs in libcowdancer
+  // due to recursive open call.
+  if (is_system_code(ret_addr))
     return 0;
 
   static int call_count;
@@ -96,6 +149,9 @@ static int return_null_p_impl(const char *where) {
     ++call_count;
     return 0;
   }
+
+  if (state == NOINIT)
+    init();
 
   static int null_reported = 0;
   if (!null_reported) {
@@ -106,13 +162,13 @@ static int return_null_p_impl(const char *where) {
   return 1;
 }
 
-static int return_null_p(const char *where) {
+static int return_null_p(const char *where, const void *ret_addr) {
   // Poor man's critical section
   static volatile int in_interceptor;
   if (in_interceptor)
     return 0;
   in_interceptor = 1;
-  int ret = return_null_p_impl(where);
+  int ret = return_null_p_impl(where, ret_addr);
   in_interceptor = 0;
   return ret;
 }
@@ -121,7 +177,7 @@ static int return_null_p(const char *where) {
 // There are easier ways to intercept malloc e.g. malloc hooks
 // and __libc_malloc but we use dlsym for educational purposes.
 void *malloc(size_t n) {
-  if (return_null_p("malloc")) {
+  if (return_null_p("malloc", __builtin_return_address(0))) {
     return NULL;
   }
 
