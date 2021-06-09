@@ -173,19 +173,35 @@ static int return_null_p(const char *where, const void *ret_addr) {
   return ret;
 }
 
-// Malloc interceptor.
+// The interceptors
 // There are easier ways to intercept malloc e.g. malloc hooks
 // and __libc_malloc but we use dlsym for educational purposes.
+
+#define INTERCEPT(name, ...) do {                          \
+    if (return_null_p(#name, __builtin_return_address(0))) \
+      return NULL;                                         \
+    static __typeof(name) *real;                           \
+    if (!real) {                                           \
+      real = dlsym(RTLD_NEXT, #name);                      \
+      assert(real && "Real " #name " not found");          \
+    }                                                      \
+    return real(__VA_ARGS__);                              \
+  } while (0)
+
 void *malloc(size_t n) {
-  if (return_null_p("malloc", __builtin_return_address(0))) {
-    return NULL;
-  }
-
-  static void *(*real_malloc)(size_t n);
-  if (!real_malloc) {
-    real_malloc = dlsym(RTLD_NEXT, "malloc");
-    assert(real_malloc && "Real malloc not found");
-  }
-
-  return real_malloc(n);
+  INTERCEPT(malloc, n);
 }
+
+#if 0
+// Calloc is a PITA because it's called from dlsym(), we should use __libc_calloc instead...
+void *calloc(size_t nmemb, size_t size) {
+  INTERCEPT(calloc, nmemb, size);
+}
+#endif
+
+#if 0
+// This seems to crash pbuilder-satisfydepends in libdl somewhere...
+void *realloc(void *ptr, size_t size) {
+  INTERCEPT(realloc, ptr, size);
+}
+#endif

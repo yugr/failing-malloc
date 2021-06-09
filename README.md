@@ -1,5 +1,5 @@
 A simple 5-minute checker which simulates OOM failures
-by returning `NULL` from `malloc`.
+by returning `NULL` from `malloc` and friends.
 
 This project is developed for [Lalambda '21 school](https://lalambda.school/en)
 and is meant for educational purposes only.
