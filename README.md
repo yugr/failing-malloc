@@ -14,6 +14,7 @@ or `echo path/to/libfailingmalloc.so >> /etc/ld.so.preload`.
 Options are supplied through environment variables:
 * `FAILING_MALLOC_FAIL_AFTER` - do not try to return `NULL`
   for first `N` calls
+* `FAILING_MALLOC_LOGFILE` - dump logs to file (instead of stderr)
 
 To fuzz an app run it in a loop:
 ```

@@ -19,6 +19,7 @@
 #include <assert.h>
 
 static char cmdline[512];
+static int log_fd;
 static int fail_after = 0;
 
 // Is file a system library or executable?
@@ -80,6 +81,13 @@ static int is_checker_enabled() {
 static void init() {
   size_t exename_len = strlen(cmdline);
   read_cmdline(cmdline + exename_len, sizeof(cmdline) - exename_len);
+
+  const char *logfile = getenv("FAILING_MALLOC_LOGFILE");
+  log_fd = logfile ? open(logfile, O_CREAT | O_APPEND | O_WRONLY) : STDERR_FILENO;
+  if (log_fd < 0) {
+    PRINTF_NO_ALLOC(STDERR_FILENO, "failingmalloc: failed to open %s\n", logfile ? logfile : "stderr");
+    abort();
+  }
 
   const char *fail_after_str = getenv("FAILING_MALLOC_FAIL_AFTER");
   fail_after = fail_after_str ? atoi(fail_after_str) : 0;
@@ -155,7 +163,7 @@ static int return_null_p_impl(const char *where, const void *ret_addr) {
 
   static int null_reported = 0;
   if (!null_reported) {
-    PRINTF_NO_ALLOC(STDERR_FILENO, "failingmalloc: returning NULL from %s in '%s'\n", where, cmdline);
+    PRINTF_NO_ALLOC(log_fd, "failingmalloc: returning NULL from %s in '%s'\n", where, cmdline);
     null_reported = 1;
   }
 
