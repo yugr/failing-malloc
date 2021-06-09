@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <signal.h>
 
 static char cmdline[512];
 static int log_fd;
@@ -131,6 +132,14 @@ static int is_system_code(const void *addr) {
   return cb_data.res;
 }
 
+// Signal handler to detect crashes on unchecked malloc returns
+static void abort_on_segv(int sig) {
+  sig = sig;
+  PRINTF_NO_ALLOC(log_fd, "failingmalloc: segmentation fault in '%s'\n", cmdline);
+  fsync(log_fd);
+  abort();
+}
+
 static int return_null_p_impl(const char *where, const void *ret_addr) {
   // Init status
   static enum {
@@ -165,6 +174,13 @@ static int return_null_p_impl(const char *where, const void *ret_addr) {
   if (!null_reported) {
     PRINTF_NO_ALLOC(log_fd, "failingmalloc: returning NULL from %s in '%s'\n", where, cmdline);
     null_reported = 1;
+  }
+
+  // Intercept SEGV signal to detect NULL dereferences
+  static int signal_installed;
+  if (!signal_installed) {
+    signal_installed = 1;
+    signal(SIGSEGV, abort_on_segv);
   }
 
   return 1;
