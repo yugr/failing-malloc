@@ -1,0 +1,20 @@
+#!/bin/sh
+
+set -eu
+set -x
+
+make_branch() {
+  hash=$(git log --grep "$2" --pretty=format:"%h")
+  if test $(echo "$hash" | wc -l) -ne 1; then
+    echo >&2 "Failed to identify commit '$1'"
+    exit 1
+  fi
+  git branch -f "$1" $hash
+}
+
+make_branch workshop/1 simplest
+make_branch workshop/2 FAILING_MALLOC_FAIL_AFTER
+make_branch workshop/3 'system files'
+make_branch workshop/4 'Intercept SEGVs'
+
+echo "Branches may now be pushed with \`git push -f --all origin'"
